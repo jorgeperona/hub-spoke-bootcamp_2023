@@ -1,0 +1,107 @@
+# Starter pipeline
+# Start with a minimal pipeline that you can customize to build and deploy your code.
+# Add steps that build, run tests, deploy, and more:
+# https://aka.ms/yaml
+# parameters:
+# - name: environment
+#   displayName: "Environment"
+#   type: string
+#   default: pre
+#   values:
+#   - pre
+#   - pro
+
+trigger: 
+  branches:
+    exclude:
+      - pre
+      - pro
+    
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+- ${{if contains(variables['Build.SourceBranch'], 'pre')}}:
+  - name: environment
+    value: 'pre'
+- ${{if contains(variables['Build.SourceBranch'], 'pro')}}:
+  - name: environment
+    value: 'pro'
+#- group: terraform-variables-${{ parameters.environment }}
+- group: terraform-variables-${{ variables.environment }}
+- name: TF_VAR_RG_NAME
+  value: '$(ResourceGroupName)'
+- name: TF_VAR_TENANTID
+  value: '$(TenantId)'
+- name: TF_VAR_SUBSCRIPTION
+  value: '$(subscriptionId)'
+- name: 'TF_VAR_DEPLOYMENTLOCATION'
+  value: '$(deploymentLocation)'
+- name: 'TF_VAR_ENVIRONMENTNAME'
+  value: ${{ variables.environment }}
+  #value: ${{ parameters.environment }}
+- name: WorkingDirectory
+  value: $(System.DefaultWorkingDirectory)/terraform
+- name: TargetArtifactDirectory
+  value: '$(Pipeline.Workspace)/s'
+- name: TargetArtifactDirectoryTarget
+  value: '$(Pipeline.Workspace)/s/release'
+- name: TargetArtifactName
+  value: '$(build.artifactstagingdirectory)/AMTF)'
+
+stages:
+- stage: Execute
+  jobs:
+  - job: Validate
+    displayName: Terraform Validate
+    steps:
+    - checkout: self
+    - task: TerraformInstaller@1
+      displayName: 'Terraform: Install'
+      inputs:
+        terraformVersion: 'latest'
+    - task: TerraformTaskV4@4
+      displayName: 'Terraform: Init'
+      inputs:
+        provider: 'azurerm'        
+        command: 'init'
+        workingDirectory: '$(WorkingDirectory)'
+        backendServiceArm: '$(backendServiceArm)'
+        backendAzureRmResourceGroupName: '$(backendAzureRmResourceGroupName)'
+        backendAzureRmStorageAccountName: '$(backendAzureRmStorageAccountName)'
+        backendAzureRmContainerName: '$(backendAzureRmContainerName)'
+        backendAzureRmKey: '$(backendAzureRmKey)'        
+    - task: TerraformTaskV4@4
+      displayName: 'Terraform: Validate'
+      inputs:
+        provider: 'azurerm'
+        environmentServiceNameAzureRM: '$(backendServiceArm)'
+        command: 'validate'
+
+    - task: TerraformTaskV4@4
+      displayName: 'Terraform: Plan'
+      inputs:
+        provider: 'azurerm'
+        command: 'plan'
+        workingDirectory: '$(WorkingDirectory)'
+        environmentServiceNameAzureRM: '$(backendServiceArm)'
+        commandOptions: "-lock=true -out=tfplan.out"        
+
+# Copy Files to Artifacts Staging Directory:-
+    - task: CopyFiles@2
+      displayName: 'Copy Files Artifacts Staging Directory'
+      inputs:
+        SourceFolder: '$(Pipeline.Workspace)/s'
+        Contents: |
+          **/*.tf
+          **/*.tfvars
+          **/*tfplan*
+        TargetFolder: '$(TargetArtifactDirectoryTarget)'
+        OverWrite: true
+
+# Publish Artifacts:-
+    - task: PublishBuildArtifacts@1
+      inputs:
+        PathtoPublish: '$(TargetArtifactDirectoryTarget)'
+        ArtifactName: 'release'
+        publishLocation: 'Container'

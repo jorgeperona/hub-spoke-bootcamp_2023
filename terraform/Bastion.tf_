@@ -1,0 +1,166 @@
+resource "azurerm_public_ip" "azurebastion-pip" {
+    name  = "bastion-${local.enviromentletter}-${local.regioncode}-PIP"
+    resource_group_name = "${local.resource_group_name}"          
+    location            = "${local.location}" 
+    allocation_method   = "Static"
+    sku                 = "Standard"
+}
+
+resource "azurerm_bastion_host" "azurebastion-host" {
+    name  = "bastion-${local.enviromentletter}-${local.regioncode}"
+    resource_group_name = "${local.resource_group_name}"          
+    location            = "${local.location}" 
+    sku = "Basic"
+
+  ip_configuration {
+    name                 = "configuration"
+    subnet_id            = azurerm_subnet.AzureBastionSubnet.id
+    public_ip_address_id = azurerm_public_ip.azurebastion-pip.id    
+  }
+  copy_paste_enabled = true
+  #file_copy_enabled = true
+}
+
+
+##############################
+##  FIREWALL AND NSG RULES  ##
+##############################
+
+resource "azurerm_network_security_group" "nsg-azurebastion" {
+    name =  "nsg-azurebastion-${local.enviromentletter}-${local.regioncode}"
+    resource_group_name = "${local.resource_group_name}"           
+    location            = "${local.location}" 
+    tags = "${var.tags}"
+}
+
+resource "azurerm_network_security_rule" "azurebastion-HTTPSInbound" {
+    resource_group_name = "${local.resource_group_name}"  
+    network_security_group_name = "${azurerm_network_security_group.nsg-azurebastion.name}"
+    name                       = "Allow-HttpsInbound"
+    priority                   = 120
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "443"
+    source_address_prefix      = "Internet"
+    destination_address_prefix = "*"
+}
+
+resource "azurerm_network_security_rule" "azurebastion-GatewayManagerInbound" {
+    resource_group_name = "${local.resource_group_name}"  
+    network_security_group_name = "${azurerm_network_security_group.nsg-azurebastion.name}"
+    name                       = "Allow-GatewayManagerInbound"
+    priority                   = 125
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "443"
+    source_address_prefix      = "GatewayManager"
+    destination_address_prefix = "*"
+}
+
+resource "azurerm_network_security_rule" "azurebastion-LoadBalancerInbound" {
+    resource_group_name = "${local.resource_group_name}"  
+    network_security_group_name = "${azurerm_network_security_group.nsg-azurebastion.name}"
+    name                       = "Allow-LoadBalancerInbound"
+    priority                   = 130
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "443"
+    source_address_prefix      = "AzureLoadBalancer"
+    destination_address_prefix = "*"
+}
+
+resource "azurerm_network_security_rule" "azurebastion-Host" {
+    resource_group_name = "${local.resource_group_name}"  
+    network_security_group_name = "${azurerm_network_security_group.nsg-azurebastion.name}"
+    name                       = "Allow-BastionHostComm"
+    priority                   = 135
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "*"
+    source_port_range          = "*"
+    destination_port_ranges     = ["8080","5701"]
+    source_address_prefix      = "VirtualNetwork"
+    destination_address_prefix = "VirtualNetwork"
+}
+
+resource "azurerm_network_security_rule" "azurebastion-DenyAll" {
+    resource_group_name = "${local.resource_group_name}"  
+    network_security_group_name = "${azurerm_network_security_group.nsg-azurebastion.name}"
+    name                       = "DenyAll"
+    priority                   = 4096
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "*"
+    source_address_prefix      = "*"
+    destination_address_prefix = "*"
+}
+
+##EGRESS TRAFFIC
+resource "azurerm_network_security_rule" "azurebastion-AllowSSH_RDPOutbound" {
+    resource_group_name = "${local.resource_group_name}"  
+    network_security_group_name = "${azurerm_network_security_group.nsg-azurebastion.name}"
+    name                       = "AllowSSH_RDPOutbound"
+    priority                   = 120
+    direction                  = "Outbound"
+    access                     = "Allow"
+    protocol                   = "*"
+    source_port_range          = "*"
+    destination_port_ranges     = ["22","3389"]
+    source_address_prefix      = "*"
+    destination_address_prefix = "VirtualNetwork"
+}
+
+resource "azurerm_network_security_rule" "azurebastion-AllowAzureCloudOutbound" {
+    resource_group_name = "${local.resource_group_name}"  
+    network_security_group_name = "${azurerm_network_security_group.nsg-azurebastion.name}"
+    name                       = "AllowAzureCloudOutbound"
+    priority                   = 125
+    direction                  = "Outbound"
+    access                     = "Allow"
+    protocol                   = "*"
+    source_port_range          = "*"
+    destination_port_range     = "443"
+    source_address_prefix      = "*"
+    destination_address_prefix = "AzureCloud"
+}
+
+resource "azurerm_network_security_rule" "AllowGetSessionInformation" {
+    resource_group_name = "${local.resource_group_name}"  
+    network_security_group_name = "${azurerm_network_security_group.nsg-azurebastion.name}"
+    name                       = "AllowGetSessionInformation"
+    priority                   = 130
+    direction                  = "Outbound"
+    access                     = "Allow"
+    protocol                   = "*"
+    source_port_range          = "*"
+    destination_port_range     = "80"
+    source_address_prefix      = "Internet"
+    destination_address_prefix = "*"
+}
+
+resource "azurerm_network_security_rule" "azurebastion-Host-Outgoing" {
+    resource_group_name = "${local.resource_group_name}"  
+    network_security_group_name = "${azurerm_network_security_group.nsg-azurebastion.name}"
+    name                       = "AllowBastionComunnication"
+    priority                   = 135
+    direction                  = "Outbound"
+    access                     = "Allow"
+    protocol                   = "*"
+    source_port_range          = "*"
+    destination_port_ranges     = ["8080","5701"]
+    source_address_prefix      = "VirtualNetwork"
+    destination_address_prefix = "VirtualNetwork"
+}
+
+resource "azurerm_subnet_network_security_group_association" "vnethub-bastion-snet-nsg-asociation" {
+  subnet_id                 = azurerm_subnet.AzureBastionSubnet.id
+  network_security_group_id = azurerm_network_security_group.nsg-azurebastion.id
+}

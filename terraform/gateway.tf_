@@ -1,0 +1,26 @@
+resource "azurerm_public_ip" "gatewayPIP" {
+    name  = "gateway-${local.enviromentletter}-${local.regioncode}-PIP"
+    resource_group_name = "${local.resource_group_name}"          
+    location            = "${local.location}" 
+    allocation_method = "Dynamic"
+}
+
+resource "azurerm_virtual_network_gateway" "gateway" {
+    name  = "gateway-${local.enviromentletter}-${local.regioncode}"
+    resource_group_name = "${local.resource_group_name}"          
+    location            = "${local.location}" 
+
+    type     = "Vpn"
+    vpn_type = "RouteBased"
+
+    active_active = false
+    enable_bgp    = false
+    sku           = "Basic"
+
+    ip_configuration {
+        name                          = "vnetGatewayConfig"
+        public_ip_address_id          = azurerm_public_ip.gatewayPIP.id
+        private_ip_address_allocation = "Dynamic"
+        subnet_id                     = azurerm_subnet.GatewaySubnet.id
+    }
+}
